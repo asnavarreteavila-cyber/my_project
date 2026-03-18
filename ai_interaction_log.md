@@ -1,0 +1,34 @@
+### Task: Core Chat Application Part A: Page Setup & API Connection
+**Prompt:** "Use `st.set_page_config(page_title=\"My AI Chat\", layout=\"wide\")`, load the Hugging Face token with `st.secrets[\"HF_TOKEN\"]`, show an error instead of crashing if the token is missing, send one hardcoded test message to the Hugging Face API, display the model response, and handle API errors gracefully."
+**AI Suggestion:** Build a minimal Streamlit app that loads the token from Streamlit secrets, sends a single `Hello!` test request to a Hugging Face model, displays the response in the main area, and shows user-friendly error messages for missing secrets, invalid tokens, rate limits, and network issues.
+**My Modifications & Reflections:** The code worked and the app booted successfully in Streamlit. I kept the implementation limited to Part A only, used `requests` with Hugging Face's inference endpoint, and added explicit error handling so the app stops safely instead of crashing when the token or API request fails.
+
+### Task: Core Chat Application Part B: Multi-Turn Conversation UI
+**Prompt:** "Extend Part A by replacing the hardcoded test message with a real chat interface using `st.chat_message(...)` and `st.chat_input(...)`. Store the full conversation in `st.session_state`, append both user and assistant messages after each exchange, send the full message history with each API request, and render the conversation above the fixed input bar using native Streamlit chat UI."
+**AI Suggestion:** Convert the app into a session-based chat interface, use Streamlit's built-in chat components for rendering and input, and build each Hugging Face request from the full conversation history so later replies can use prior context.
+**My Modifications & Reflections:** The code worked and the app booted successfully with the native Streamlit chat layout. I adapted the Hugging Face request format by serializing the full chat history into a single prompt because the chosen inference endpoint expects text input rather than a list of chat messages.
+
+### Task: Core Chat Application Part C: Chat Management
+**Prompt:** "Add a `New Chat` button to `st.sidebar`, show a scrollable sidebar list of chats with titles and timestamps, highlight the active chat, allow switching without overwriting other chats, and give each chat a `✕` delete button that removes it and handles the active-chat case safely."
+**AI Suggestion:** Move chat navigation into the native Streamlit sidebar, store multiple chats in `st.session_state`, use a distinct button style for the active chat, and manage creation, switching, and deletion by tracking an active chat ID.
+**My Modifications & Reflections:** The code worked and the app booted successfully with sidebar-based chat management. I used native sidebar buttons and columns instead of custom CSS, kept each chat independent in `st.session_state`, and adjusted new chats to start empty so the behavior matches the assignment wording more closely.
+
+### Task: Core Chat Application Part D: Chat Persistence
+**Prompt:** "Save each chat as a separate JSON file in `chats/`, load all existing chat files on app startup, allow returning to and continuing previous chats, delete the corresponding JSON file when a chat is deleted, and keep a title/timestamp for each saved chat."
+**AI Suggestion:** Add a persistence layer around the existing multi-chat state by writing one JSON file per chat, loading all valid files on startup, and keeping create, update, and delete actions synchronized between `st.session_state` and the filesystem.
+**My Modifications & Reflections:** The code worked and the app booted successfully after adding file-based persistence. I adapted the chat model to store `id`, `title`, `created_at`, and `messages` in each JSON file, and made chat creation, title updates, message appends, and deletions all write through to the `chats/` directory so previous conversations can be reopened and continued.
+
+### Task: Response Streaming
+**Prompt:** "Use `stream=True` in the Hugging Face API request, handle the SSE response stream, render the reply incrementally in Streamlit with native methods, and save the full streamed response to the chat history once streaming is complete."
+**AI Suggestion:** Switch the assistant request to a streaming HTTP call, parse `data:` SSE lines as chunks arrive, feed those chunks into Streamlit's streaming UI, and append the final combined text to the saved chat history after the stream finishes.
+**My Modifications & Reflections:** The code worked and the app booted successfully with the streaming path enabled. I used `requests.post(..., stream=True)` plus a simple SSE parser, rendered chunks with `st.write_stream()`, and added a short `sleep` between chunks so the streaming behavior remains visible even if the model responds very quickly.
+
+### Task: User Memory
+**Prompt:** "After each assistant response, make a second lightweight API call to extract personal traits or preferences from the user's message, store them in `memory.json`, show them in a `User Memory` sidebar expander, provide a native control to clear memory, and inject stored memory into future prompts so responses become personalized."
+**AI Suggestion:** Add a persistent memory layer that saves extracted traits in `memory.json`, displays that data in the sidebar, merges new traits into existing memory, and includes the saved memory in the system prompt of future conversations.
+**My Modifications & Reflections:** The code worked and the app booted successfully with persistent memory enabled. I used a second non-streaming model call to request a JSON object of traits from the latest user message, merged non-empty values into saved memory, added a sidebar expander with a clear button, and injected the current memory into the system prompt so later responses can reference known user preferences.
+
+### Task: User Memory
+**Prompt:** "After each assistant response, make a second lightweight API call to extract personal traits or preferences from the user's message, store them in `memory.json`, show them in a `User Memory` sidebar expander, provide a native control to clear memory, and inject stored memory into future prompts so responses become personalized."
+**AI Suggestion:** Add a persistent memory layer that saves extracted traits in `memory.json`, displays that data in the sidebar, merges new traits into existing memory, and includes the saved memory in the system prompt of future conversations.
+**My Modifications & Reflections:** The code worked and the app booted successfully with persistent memory enabled. I used a second non-streaming model call to request a JSON object of traits from the latest user message, merged non-empty values into saved memory, added a sidebar expander with a clear button, and injected the current memory into the system prompt so later responses can reference known user preferences.
