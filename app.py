@@ -8,7 +8,7 @@ import streamlit as st
 
 
 MODEL_ID = "google/flan-t5-base"
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL_ID}"
+API_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL_ID}"
 CHATS_DIR = Path(__file__).with_name("chats")
 MEMORY_PATH = Path(__file__).with_name("memory.json")
 BASE_SYSTEM_PROMPT = (
