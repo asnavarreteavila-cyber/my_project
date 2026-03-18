@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 
 
-MODEL_ID = "google/flan-t5-base"
+MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct"
 API_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL_ID}"
 CHATS_DIR = Path(__file__).with_name("chats")
 MEMORY_PATH = Path(__file__).with_name("memory.json")
@@ -181,6 +181,8 @@ def open_stream_response(token, messages, memory):
         return None, "Your Hugging Face token appears to be invalid."
     if response.status_code == 429:
         return None, "The Hugging Face API rate limit was reached. Please try again later."
+    if response.status_code == 404:
+        return None, "The selected Hugging Face model is not available on this inference backend."
     if response.status_code >= 500:
         return None, "Hugging Face is currently unavailable. Please try again later."
     if not response.ok:
