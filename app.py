@@ -154,21 +154,6 @@ def build_model_messages(messages, memory):
     return model_messages
 
 
-def open_stream_response(token, messages, memory):
-    client = get_inference_client(token)
-    try:
-        stream = client.chat_completion(
-            model=MODEL_ID,
-            messages=build_model_messages(messages, memory),
-            max_tokens=512,
-            stream=True,
-        )
-    except Exception as error:
-        return None, interpret_hf_error(error)
-
-    return stream, None
-
-
 def request_json_completion(token, prompt):
     client = get_inference_client(token)
     try:
@@ -243,7 +228,15 @@ def extract_user_memory(token, user_message):
     return parse_json_object(raw_result)
 
 
-def iter_stream_chunks(stream):
+def stream_assistant_reply(token, messages, memory):
+    client = get_inference_client(token)
+    stream = client.chat_completion(
+        model=MODEL_ID,
+        messages=build_model_messages(messages, memory),
+        max_tokens=512,
+        stream=True,
+    )
+
     for chunk in stream:
         if not chunk.choices:
             continue
@@ -378,20 +371,20 @@ if user_prompt:
         st.write(user_prompt)
 
     with st.chat_message("assistant"):
-        response, error_message = open_stream_response(
-            token,
-            active_chat["messages"],
-            st.session_state.memory,
-        )
-
-        if error_message:
-            st.error(error_message)
-            assistant_message = error_message
-        else:
-            assistant_message = st.write_stream(iter_stream_chunks(response)).strip()
+        try:
+            assistant_message = st.write_stream(
+                stream_assistant_reply(
+                    token,
+                    active_chat["messages"],
+                    st.session_state.memory,
+                )
+            ).strip()
             if not assistant_message:
                 assistant_message = "The model returned an empty streamed response."
                 st.error(assistant_message)
+        except Exception as error:
+            assistant_message = interpret_hf_error(error)
+            st.error(assistant_message)
 
     active_chat["messages"].append({"role": "assistant", "content": assistant_message})
     save_chat(active_chat)
