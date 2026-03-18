@@ -3,12 +3,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import requests
 import streamlit as st
+from huggingface_hub import InferenceClient
 
 
-MODEL_ID = "meta-llama/Llama-3.2-1B-Instruct"
-API_URL = f"https://router.huggingface.co/hf-inference/models/{MODEL_ID}"
+MODEL_ID = "meta-llama/Meta-Llama-3-8B-Instruct"
 CHATS_DIR = Path(__file__).with_name("chats")
 MEMORY_PATH = Path(__file__).with_name("memory.json")
 BASE_SYSTEM_PROMPT = (
@@ -22,6 +21,10 @@ def load_hf_token():
         return str(st.secrets.get("HF_TOKEN", "")).strip()
     except Exception:
         return ""
+
+
+def get_inference_client(token):
+    return InferenceClient(api_key=token)
 
 
 def load_memory():
@@ -145,78 +148,65 @@ def build_system_prompt(memory):
     )
 
 
-def build_prompt(messages, memory):
-    conversation = [f"System: {build_system_prompt(memory)}"]
-    for message in messages:
-        role_label = "User" if message["role"] == "user" else "Assistant"
-        conversation.append(f"{role_label}: {message['content']}")
-    conversation.append("Assistant:")
-    return "\n".join(conversation)
+def build_model_messages(messages, memory):
+    model_messages = [{"role": "system", "content": build_system_prompt(memory)}]
+    model_messages.extend(messages)
+    return model_messages
 
 
 def open_stream_response(token, messages, memory):
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {
-        "inputs": build_prompt(messages, memory),
-        "options": {"wait_for_model": True},
-        "stream": True,
-    }
-
+    client = get_inference_client(token)
     try:
-        response = requests.post(
-            API_URL,
-            headers=headers,
-            json=payload,
-            timeout=30,
+        stream = client.chat_completion(
+            model=MODEL_ID,
+            messages=build_model_messages(messages, memory),
+            max_tokens=512,
             stream=True,
         )
-    except requests.exceptions.Timeout:
-        return None, "The Hugging Face API timed out. Try again in a moment."
-    except requests.exceptions.ConnectionError:
-        return None, "A network error occurred while contacting Hugging Face."
-    except requests.exceptions.RequestException:
-        return None, "An unexpected request error occurred while contacting Hugging Face."
+    except Exception as error:
+        return None, interpret_hf_error(error)
 
-    if response.status_code == 401:
-        return None, "Your Hugging Face token appears to be invalid."
-    if response.status_code == 429:
-        return None, "The Hugging Face API rate limit was reached. Please try again later."
-    if response.status_code == 404:
-        return None, "The selected Hugging Face model is not available on this inference backend."
-    if response.status_code >= 500:
-        return None, "Hugging Face is currently unavailable. Please try again later."
-    if not response.ok:
-        return None, f"Hugging Face returned an error: {response.status_code}"
-
-    return response, None
+    return stream, None
 
 
 def request_json_completion(token, prompt):
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {
-        "inputs": prompt,
-        "options": {"wait_for_model": True},
-    }
-
+    client = get_inference_client(token)
     try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-    except requests.exceptions.RequestException:
+        response = client.chat_completion(
+            model=MODEL_ID,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Return only valid JSON with no extra explanation.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=256,
+        )
+    except Exception:
         return None
 
-    if not response.ok:
+    choice = response.choices[0] if response and response.choices else None
+    if not choice or not choice.message:
         return None
 
-    try:
-        data = response.json()
-    except ValueError:
-        return None
+    return choice.message.content
 
-    if isinstance(data, list) and data:
-        first_item = data[0]
-        if isinstance(first_item, dict) and first_item.get("generated_text"):
-            return first_item["generated_text"]
 
-    return None
+def interpret_hf_error(error):
+    error_text = str(error)
+    lowered = error_text.lower()
+
+    if "401" in lowered or "unauthorized" in lowered:
+        return "Your Hugging Face token appears to be invalid."
+    if "429" in lowered or "rate limit" in lowered:
+        return "The Hugging Face API rate limit was reached. Please try again later."
+    if "404" in lowered or "not found" in lowered:
+        return "The selected Hugging Face model is not available on this inference backend."
+    if "timeout" in lowered:
+        return "The Hugging Face API timed out. Try again in a moment."
+
+    return "A Hugging Face API error occurred. Please try again later."
 
 
 def parse_json_object(text):
@@ -253,33 +243,16 @@ def extract_user_memory(token, user_message):
     return parse_json_object(raw_result)
 
 
-def iter_stream_chunks(response):
-    for raw_line in response.iter_lines(decode_unicode=True):
-        if not raw_line:
+def iter_stream_chunks(stream):
+    for chunk in stream:
+        if not chunk.choices:
             continue
 
-        line = raw_line.strip()
-        if not line.startswith("data:"):
-            continue
-
-        data_text = line[5:].strip()
-        if data_text == "[DONE]":
-            break
-
-        try:
-            event = json.loads(data_text)
-        except json.JSONDecodeError:
-            continue
-
-        if isinstance(event, dict) and event.get("error"):
-            continue
-
-        token_data = event.get("token") if isinstance(event, dict) else None
-        if isinstance(token_data, dict):
-            token_text = token_data.get("text", "")
-            if token_text:
-                time.sleep(0.02)
-                yield token_text
+        delta = chunk.choices[0].delta
+        token_text = getattr(delta, "content", None)
+        if token_text:
+            time.sleep(0.02)
+            yield token_text
 
 
 def create_chat():
@@ -416,7 +389,6 @@ if user_prompt:
             assistant_message = error_message
         else:
             assistant_message = st.write_stream(iter_stream_chunks(response)).strip()
-            response.close()
             if not assistant_message:
                 assistant_message = "The model returned an empty streamed response."
                 st.error(assistant_message)
